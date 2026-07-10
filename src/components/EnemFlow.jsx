@@ -414,9 +414,31 @@ const ONBOARDING_QUESTIONS = [
 function Onboarding({ onComplete }) {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
   const q = ONBOARDING_QUESTIONS[step];
   const selected = answers[q.key];
   const isLast = step === ONBOARDING_QUESTIONS.length - 1;
+
+  async function handleAdvance() {
+    if (!isLast) {
+      setStep((s) => s + 1);
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onComplete(answers);
+      // Sucesso: o componente pai troca de tela sozinho (deixa de renderizar
+      // <Onboarding />), então não precisamos fazer nada aqui.
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Não foi possível salvar seu diagnóstico agora. Verifique sua conexão e tente novamente."
+      );
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -455,19 +477,20 @@ function Onboarding({ onComplete }) {
               );
             })}
           </div>
+
+          {error && (
+            <p style={{ color: C.danger, fontSize: 13, marginTop: 16, marginBottom: 0 }}>
+              {error}
+            </p>
+          )}
+
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 28 }}>
             <button
-              disabled={!selected}
-              style={S.btnPrimary(!selected)}
-              onClick={() => {
-                if (isLast) {
-                  onComplete(answers);
-                } else {
-                  setStep((s) => s + 1);
-                }
-              }}
+              disabled={!selected || submitting}
+              style={S.btnPrimary(!selected || submitting)}
+              onClick={handleAdvance}
             >
-              {isLast ? "Concluir e personalizar" : "Avançar"}
+              {submitting ? "Salvando..." : isLast ? "Concluir e personalizar" : "Avançar"}
             </button>
           </div>
         </div>
@@ -1293,13 +1316,12 @@ export default function EnemFlowApp() {
   }, [user]);
 
   async function handleOnboardingComplete(answers) {
-    try {
-      await updateOnboardingProfile(answers);
-      setForceOnboarding(false);
-      setScreen("painel");
-    } catch {
-      setDbError(true);
-    }
+    // Não engolimos o erro aqui: se updateOnboardingProfile falhar, deixamos
+    // a exceção subir para o componente <Onboarding />, que mostra a
+    // mensagem de erro na própria tela (em vez de travar sem feedback).
+    await updateOnboardingProfile(answers);
+    setForceOnboarding(false);
+    setScreen("painel");
   }
 
   async function handleSimuladoFinish(result) {
