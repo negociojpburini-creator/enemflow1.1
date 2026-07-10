@@ -9,6 +9,10 @@ import {
   RotateCcw, Copy, ChevronDown, Sparkles, Check, Flag, AlertTriangle,
   Lightbulb, RefreshCw,
 } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
+import { useAuth } from "../contexts/AuthContext";
+import LoginScreen from "./LoginScreen";
+import LoadingScreen from "./LoadingScreen";
 
 // ---------------------------------------------------------------------------
 // Design tokens (Ultra Dark Premium Mode, per spec)
@@ -267,33 +271,20 @@ const FALLBACK_CURIOSIDADES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Supabase (modo demo pública, sem login — acesso via chave publicável)
+// Acesso a dados via Supabase SDK (@supabase/supabase-js)
+//
+// A autenticação é 100% gerenciada pelo AuthContext (src/contexts/AuthContext.js)
+// através do cliente único em src/lib/supabaseClient.js — o mesmo cliente é
+// usado aqui para ler/gravar dados, então o token de sessão do usuário
+// logado já vai automaticamente em cada requisição (nenhum header manual).
 // ---------------------------------------------------------------------------
-const SUPABASE_URL = "https://fmentzvubfqniqyrivvh.supabase.co";
-const SUPABASE_KEY = "sb_publishable_s6jmxg3ofSWQbUu1oxUw6A_ZG6ADkdU";
-
-async function supaFetch(path, options = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: options.prefer || "return=representation",
-      ...(options.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Supabase ${res.status}: ${text}`);
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
-
 async function fetchQuestoesDoBanco() {
-  const rows = await supaFetch("questoes?dificuldade=eq.Alta&select=*");
-  return rows.map((r) => ({
+  const { data, error } = await supabase
+    .from("questoes")
+    .select("*")
+    .eq("dificuldade", "Alta");
+  if (error) throw error;
+  return data.map((r) => ({
     id: r.id,
     disciplina: r.disciplina,
     enunciado: r.enunciado,
@@ -302,122 +293,57 @@ async function fetchQuestoesDoBanco() {
   }));
 }
 
-async function fetchHistoricoDoBanco(accessToken) {
-  const rows = await supaFetch("simulados_historico?select=*&order=data_realizacao.asc", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return rows.map((r) => ({
+async function fetchHistoricoDoBanco() {
+  const { data, error } = await supabase
+    .from("simulados_historico")
+    .select("*")
+    .order("data_realizacao", { ascending: true });
+  if (error) throw error;
+  return data.map((r) => ({
     id: r.id, data: r.data_realizacao, acertos: r.acertos, erros: r.erros,
     tempoGasto: r.tempo_gasto_segundos, respostas: r.respostas_usuario,
     porDisciplina: r.por_disciplina || {},
   }));
 }
 
-async function salvarSimuladoNoBanco(result, accessToken, userId) {
+async function salvarSimuladoNoBanco(result, userId) {
   const pontuacao = Math.round((result.acertos / (result.acertos + result.erros)) * 1000);
-  await supaFetch("simulados_historico", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({
-      user_id: userId,
-      pontuacao,
-      tempo_gasto_segundos: result.tempoGasto,
-      acertos: result.acertos,
-      erros: result.erros,
-      respostas_usuario: result.respostas,
-      por_disciplina: result.porDisciplina,
-    }),
+  const { error } = await supabase.from("simulados_historico").insert({
+    user_id: userId,
+    pontuacao,
+    tempo_gasto_segundos: result.tempoGasto,
+    acertos: result.acertos,
+    erros: result.erros,
+    respostas_usuario: result.respostas,
+    por_disciplina: result.porDisciplina,
   });
+  if (error) throw error;
 }
 
 async function fetchTemasDoBanco() {
-  const rows = await supaFetch("redacoes_temas?select=*&order=ano.desc");
-  return rows.map((r) => ({
+  const { data, error } = await supabase
+    .from("redacoes_temas")
+    .select("*")
+    .order("ano", { ascending: false });
+  if (error) throw error;
+  return data.map((r) => ({
     id: r.id, ano: r.ano, tipo: r.tipo, tema: r.tema,
     eixos: r.eixos_tematicos || [], resumo: r.proposta_contexto,
   }));
 }
 
 async function fetchCuriosidadesDoBanco() {
-  const rows = await supaFetch("enem_curiosidades?select=*");
-  return rows.map((r) => ({
+  const { data, error } = await supabase.from("enem_curiosidades").select("*");
+  if (error) throw error;
+  return data.map((r) => ({
     id: r.id, categoria: r.categoria, titulo: r.titulo,
     fato: r.fato_historico, impacto: r.impacto_estudo || "",
   }));
 }
 
 // ---------------------------------------------------------------------------
-// Autenticação (Supabase Auth via REST — GoTrue), e-mail e senha
+// Formatação
 // ---------------------------------------------------------------------------
-async function authFetch(path, body) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error_description || data.msg || data.error || "Erro de autenticação");
-  }
-  return data;
-}
-
-async function signUp(email, password) {
-  return authFetch("signup", { email, password });
-}
-async function signIn(email, password) {
-  return authFetch("token?grant_type=password", { email, password });
-}
-async function refreshSession(refresh_token) {
-  return authFetch("token?grant_type=refresh_token", { refresh_token });
-}
-async function signOutRemote(access_token) {
-  try {
-    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${access_token}` },
-    });
-  } catch {
-    // ignora falha de logout remoto
-  }
-}
-
-async function fetchPerfil(accessToken, userId) {
-  const rows = await supaFetch(`perfis?id=eq.${userId}&select=*`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!rows.length) return null;
-  const r = rows[0];
-  return { foco: r.foco, tempo: r.tempo, historico: r.historico, fraqueza: r.fraqueza, meta: r.meta };
-}
-
-async function salvarPerfil(accessToken, userId, answers) {
-  await supaFetch("perfis", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, Prefer: "resolution=merge-duplicates,return=representation" },
-    body: JSON.stringify({ id: userId, ...answers }),
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Storage helpers (persistent, personal — usado só para o perfil de diagnóstico)
-// ---------------------------------------------------------------------------
-async function loadJSON(key, fallback) {
-  try {
-    const res = await window.storage.get(key, false);
-    return res ? JSON.parse(res.value) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-async function saveJSON(key, value) {
-  try {
-    await window.storage.set(key, JSON.stringify(value), false);
-  } catch {
-    // silently ignore — non-critical persistence
-  }
-}
-
 function fmtTime(totalSeconds) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -483,135 +409,6 @@ const ONBOARDING_QUESTIONS = [
   { key: "fraqueza", label: "Qual seu maior ponto fraco autoavaliado?", options: ["Matemática", "Redação", "Ciências da Natureza", "Ciências Humanas"] },
   { key: "meta", label: "Qual sua meta de pontuação geral?", options: ["Menos de 600", "600 a 750", "Mais de 750"] },
 ];
-
-// ---------------------------------------------------------------------------
-// Autenticação — tela de login / cadastro
-// ---------------------------------------------------------------------------
-function AuthScreen({ onAuthenticated }) {
-  const [mode, setMode] = useState("entrar"); // 'entrar' | 'criar'
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [info, setInfo] = useState(null);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError(null);
-    setInfo(null);
-    if (!email || !password) {
-      setError("Preencha e-mail e senha.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("A senha precisa ter pelo menos 6 caracteres.");
-      return;
-    }
-    setLoading(true);
-    try {
-      if (mode === "criar") {
-        const data = await signUp(email, password);
-        if (data.access_token) {
-          onAuthenticated(data);
-        } else {
-          setInfo("Conta criada! Verifique seu e-mail para confirmar antes de entrar (se a confirmação estiver ativa no projeto).");
-          setMode("entrar");
-        }
-      } else {
-        const data = await signIn(email, password);
-        onAuthenticated(data);
-      }
-    } catch (err) {
-      setError(err.message || "Não foi possível autenticar.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 400 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 24 }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 9, background: C.accent,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontWeight: 800, color: "#0d1117", fontSize: 16,
-          }}>E</div>
-          <span style={{ fontWeight: 700, fontSize: 20 }}>EnemFlow</span>
-        </div>
-
-        <div style={S.card}>
-          <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.bg, borderRadius: 10, padding: 4 }}>
-            {[{ key: "entrar", label: "Entrar" }, { key: "criar", label: "Criar conta" }].map((t) => (
-              <button
-                key={t.key}
-                onClick={() => { setMode(t.key); setError(null); setInfo(null); }}
-                style={{
-                  flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
-                  background: mode === t.key ? C.card : "transparent",
-                  color: mode === t.key ? C.text : C.muted, fontWeight: 600, fontSize: 14,
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <label style={{ ...S.mutedText, display: "block", marginBottom: 6 }}>E-mail</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="voce@exemplo.com"
-              style={{
-                width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 9,
-                border: `1px solid ${C.border}`, background: C.bg, color: C.text,
-                fontSize: 14, marginBottom: 14,
-              }}
-            />
-            <label style={{ ...S.mutedText, display: "block", marginBottom: 6 }}>Senha</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
-              style={{
-                width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 9,
-                border: `1px solid ${C.border}`, background: C.bg, color: C.text,
-                fontSize: 14, marginBottom: 18,
-              }}
-            />
-
-            {error && <p style={{ color: C.danger, fontSize: 13, marginTop: -8, marginBottom: 14 }}>{error}</p>}
-            {info && <p style={{ color: C.success, fontSize: 13, marginTop: -8, marginBottom: 14 }}>{info}</p>}
-
-            <button type="submit" disabled={loading} style={{ ...S.btnPrimary(loading), width: "100%" }}>
-              {loading ? "Aguarde..." : mode === "criar" ? "Criar conta" : "Entrar"}
-            </button>
-          </form>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
-            <div style={{ flex: 1, height: 1, background: C.border }} />
-            <span style={{ ...S.mutedText, fontSize: 12 }}>ou</span>
-            <div style={{ flex: 1, height: 1, background: C.border }} />
-          </div>
-
-          <button
-            disabled
-            title="Configuração do Google OAuth pendente"
-            style={{
-              ...S.btnGhost, width: "100%", opacity: 0.5, cursor: "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}
-          >
-            Continuar com Google (em breve)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 function Onboarding({ onComplete }) {
@@ -1468,79 +1265,49 @@ function Redacao() {
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
-const REFRESH_TOKEN_KEY = "auth-refresh-token";
-
 export default function EnemFlowApp() {
-  const [authLoading, setAuthLoading] = useState(true);
-  const [session, setSession] = useState(null); // { access_token, refresh_token, user }
-  const [dataLoading, setDataLoading] = useState(false);
-  const [profile, setProfile] = useState(null);
+  const { user, profile, loading: authLoading, signOut, updateOnboardingProfile } = useAuth();
+
+  const [dataLoading, setDataLoading] = useState(true);
   const [history, setHistory] = useState([]);
   const [dbError, setDbError] = useState(false);
   const [screen, setScreen] = useState("painel");
   const [lastResult, setLastResult] = useState(null);
+  const [forceOnboarding, setForceOnboarding] = useState(false);
 
-  // Tenta restaurar sessão a partir do refresh_token salvo
+  // Carrega o histórico de simulados assim que há um usuário autenticado
   useEffect(() => {
-    (async () => {
-      try {
-        const stored = await loadJSON(REFRESH_TOKEN_KEY, null);
-        if (stored?.refresh_token) {
-          const data = await refreshSession(stored.refresh_token);
-          await activateSession(data);
-        }
-      } catch {
-        await saveJSON(REFRESH_TOKEN_KEY, null);
-      } finally {
-        setAuthLoading(false);
-      }
-    })();
-  }, []);
-
-  async function activateSession(data) {
-    setSession(data);
-    await saveJSON(REFRESH_TOKEN_KEY, { refresh_token: data.refresh_token });
+    if (!user) {
+      setHistory([]);
+      setDataLoading(false);
+      return;
+    }
+    let isMounted = true;
     setDataLoading(true);
     setDbError(false);
-    try {
-      const [p, h] = await Promise.all([
-        fetchPerfil(data.access_token, data.user.id),
-        fetchHistoricoDoBanco(data.access_token),
-      ]);
-      setProfile(p);
-      setHistory(h);
-    } catch {
-      setDbError(true);
-    } finally {
-      setDataLoading(false);
-    }
-  }
-
-  async function handleLogout() {
-    if (session) await signOutRemote(session.access_token);
-    await saveJSON(REFRESH_TOKEN_KEY, null);
-    setSession(null);
-    setProfile(null);
-    setHistory([]);
-    setScreen("painel");
-  }
+    fetchHistoricoDoBanco()
+      .then((h) => { if (isMounted) setHistory(h); })
+      .catch(() => { if (isMounted) setDbError(true); })
+      .finally(() => { if (isMounted) setDataLoading(false); });
+    return () => { isMounted = false; };
+  }, [user]);
 
   async function handleOnboardingComplete(answers) {
-    setProfile(answers);
     try {
-      await salvarPerfil(session.access_token, session.user.id, answers);
+      await updateOnboardingProfile(answers);
+      setForceOnboarding(false);
+      setScreen("painel");
     } catch {
       setDbError(true);
     }
-    setScreen("painel");
   }
 
   async function handleSimuladoFinish(result) {
     setLastResult(result);
     setScreen("resultado");
     try {
-      await salvarSimuladoNoBanco(result, session.access_token, session.user.id);
-      const h = await fetchHistoricoDoBanco(session.access_token);
+      await salvarSimuladoNoBanco(result, user.id);
+      const h = await fetchHistoricoDoBanco();
       setHistory(h);
     } catch {
       setHistory((prev) => [...prev, result]);
@@ -1549,15 +1316,11 @@ export default function EnemFlowApp() {
   }
 
   if (authLoading) {
-    return (
-      <div style={{ ...S.page, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <p style={S.mutedText}>Carregando...</p>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
-  if (!session) {
-    return <AuthScreen onAuthenticated={activateSession} />;
+  if (!user) {
+    return <LoginScreen />;
   }
 
   if (dataLoading) {
@@ -1568,7 +1331,9 @@ export default function EnemFlowApp() {
     );
   }
 
-  if (!profile) {
+  const onboardingPendente = forceOnboarding || !profile?.foco;
+
+  if (onboardingPendente) {
     return <div style={S.page}><Onboarding onComplete={handleOnboardingComplete} /></div>;
   }
 
@@ -1586,9 +1351,9 @@ export default function EnemFlowApp() {
         screen={screen}
         setScreen={setScreen}
         locked={screen === "simulado"}
-        onRedoOnboarding={() => setProfile(null)}
-        userEmail={session.user?.email}
-        onLogout={handleLogout}
+        onRedoOnboarding={() => setForceOnboarding(true)}
+        userEmail={user.email}
+        onLogout={signOut}
       />
       {screen === "painel" && (
         <Painel history={history} profile={profile} goSimulado={() => setScreen("simulado")} />
