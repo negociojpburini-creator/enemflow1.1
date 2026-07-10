@@ -113,22 +113,31 @@ export function AuthProvider({ children }) {
 
   // ---------------------------------------------------------------------
   // Salva as respostas do quiz de onboarding em public.profiles
+  //
+  // Nomes de coluna alinhados ao schema já criado no banco (mesmas chaves
+  // usadas pelo componente Onboarding em EnemFlow.jsx): foco, tempo,
+  // historico, fraqueza, meta.
   // ---------------------------------------------------------------------
   async function updateOnboardingProfile(formData) {
     if (!user) throw new Error("Nenhum usuário logado.");
 
     const payload = {
-      foco_carreira: formData.foco_carreira,
-      tempo_disponivel: formData.tempo_disponivel,
-      historico_estudo: formData.historico_estudo,
-      maior_fraqueza: formData.maior_fraqueza,
-      meta_pontuacao: formData.meta_pontuacao,
+      id: user.id,
+      email: user.email,
+      foco: formData.foco,
+      tempo: formData.tempo,
+      historico: formData.historico,
+      fraqueza: formData.fraqueza,
+      meta: formData.meta,
     };
 
+    // upsert (não update): contas criadas antes da trigger handle_new_user
+    // estar configurada podem não ter uma linha em profiles ainda. upsert
+    // cria a linha se não existir e atualiza se já existir — funciona nos
+    // dois casos, sem depender da trigger ter rodado.
     const { data, error } = await supabase
       .from("profiles")
-      .update(payload)
-      .eq("id", user.id)
+      .upsert(payload, { onConflict: "id" })
       .select()
       .single();
 
