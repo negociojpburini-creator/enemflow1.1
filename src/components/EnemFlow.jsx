@@ -7,43 +7,14 @@ import {
 import {
   Home, ClipboardList, PenTool, BarChart3, Clock, CheckCircle2, XCircle,
   RotateCcw, Copy, ChevronDown, Sparkles, Check, Flag, AlertTriangle,
-  Lightbulb, RefreshCw,
+  Lightbulb, RefreshCw, BookOpen,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
+import { C, DISCIPLINES, DISC_COLORS, S } from "../lib/theme";
 import LoginScreen from "./LoginScreen";
 import LoadingScreen from "./LoadingScreen";
-
-// ---------------------------------------------------------------------------
-// Design tokens (Ultra Dark Premium Mode, per spec)
-// ---------------------------------------------------------------------------
-const C = {
-  bg: "#0d1117",
-  card: "#161b22",
-  border: "#30363d",
-  text: "#e1e4e8",
-  muted: "#8b949e",
-  accent: "#58a6ff",
-  success: "#34d058",
-  warn: "#d2a8ff",
-  danger: "#f85149",
-};
-
-const DISCIPLINES = [
-  "Matemática", "Física", "Química", "Biologia",
-  "História", "Geografia", "Linguagens", "Filosofia/Sociologia",
-];
-
-const DISC_COLORS = {
-  "Matemática": "#58a6ff",
-  "Física": "#d2a8ff",
-  "Química": "#34d058",
-  "Biologia": "#f2cc60",
-  "História": "#f78166",
-  "Geografia": "#79c0ff",
-  "Linguagens": "#ff9bce",
-  "Filosofia/Sociologia": "#a5a5f0",
-};
+import Questoes from "./Questoes";
 
 // ---------------------------------------------------------------------------
 // Seed data — 20 original high-difficulty practice questions
@@ -379,27 +350,6 @@ function calcAreaScores(history) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared style helpers
-// ---------------------------------------------------------------------------
-const S = {
-  page: { minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "Inter, system-ui, sans-serif" },
-  card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20 },
-  mutedText: { color: C.muted, fontSize: 13 },
-  btnPrimary: (disabled) => ({
-    padding: "10px 20px", borderRadius: 10, border: "none",
-    background: disabled ? "#274361" : C.accent,
-    color: disabled ? "#7f93ab" : "#0d1117", fontWeight: 700,
-    cursor: disabled ? "not-allowed" : "pointer", fontSize: 14,
-    transition: "opacity .15s",
-  }),
-  btnGhost: {
-    padding: "10px 18px", borderRadius: 10, border: `1px solid ${C.border}`,
-    background: "transparent", color: C.text, fontWeight: 600,
-    cursor: "pointer", fontSize: 14,
-  },
-};
-
-// ---------------------------------------------------------------------------
 // Onboarding
 // ---------------------------------------------------------------------------
 const ONBOARDING_QUESTIONS = [
@@ -506,6 +456,7 @@ function Onboarding({ onComplete }) {
 function TopNav({ screen, setScreen, onRedoOnboarding, locked, userEmail, onLogout }) {
   const items = [
     { key: "painel", label: "Painel", icon: Home },
+    { key: "questoes", label: "Questões", icon: BookOpen },
     { key: "simulado", label: "Simulado", icon: ClipboardList },
     { key: "redacao", label: "Redação", icon: PenTool },
   ];
@@ -1380,6 +1331,7 @@ export default function EnemFlowApp() {
       {screen === "painel" && (
         <Painel history={history} profile={profile} goSimulado={() => setScreen("simulado")} />
       )}
+      {screen === "questoes" && <Questoes />}
       {screen === "simulado" && (
         <Simulado onFinish={handleSimuladoFinish} />
       )}
