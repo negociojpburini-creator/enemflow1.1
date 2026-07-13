@@ -15,6 +15,7 @@ import { C, DISCIPLINES, DISC_COLORS, S } from "../lib/theme";
 import LoginScreen from "./LoginScreen";
 import LoadingScreen from "./LoadingScreen";
 import Questoes from "./Questoes";
+import RedacaoEditor from "./RedacaoEditor";
 
 // ---------------------------------------------------------------------------
 // Seed data — 20 original high-difficulty practice questions
@@ -1049,7 +1050,7 @@ function Resultado({ result, onGoPainel, onRetry }) {
 // ---------------------------------------------------------------------------
 function Redacao() {
   const [temas, setTemas] = useState(FALLBACK_REDACAO_TEMAS);
-  const [tab, setTab] = useState("historico");
+  const [tab, setTab] = useState("escrever");
   const [yearFilter, setYearFilter] = useState("Todos");
   const [expanded, setExpanded] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1076,27 +1077,10 @@ function Redacao() {
     setAiError(null);
     setAiTheme(null);
     try {
-      const systemPrompt =
-        "Gere um tema inédito de redação seguindo rigorosamente a matriz de competências do ENEM. " +
-        "O tema deve abordar debates modernos das seguintes áreas aleatórias: Avanço Tecnológico, Ética Digital, " +
-        "Sustentabilidade Climática ou Dinâmicas Sociais Urbanas. Retorne SOMENTE um objeto JSON válido, sem markdown " +
-        "e sem texto adicional, contendo: tema (string), ano_futuro (int), eixos_tematicos (array de strings), " +
-        "proposta_contexto (string) e textos_motivadores (array com 3 textos simulados curtos, cada um como string).";
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: systemPrompt }],
-        }),
-      });
+      const response = await fetch("/api/gerar-tema", { method: "POST" });
       const data = await response.json();
-      const textBlock = (data.content || []).find((b) => b.type === "text");
-      if (!textBlock) throw new Error("Resposta vazia da IA");
-      const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-      setAiTheme(parsed);
+      if (!response.ok) throw new Error(data.error || "Erro ao gerar tema.");
+      setAiTheme(data);
     } catch (e) {
       setAiError("Não foi possível gerar o tema agora. Tente novamente.");
     } finally {
@@ -1113,31 +1097,36 @@ function Redacao() {
   }
 
   return (
-    <div style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 24, marginBottom: 20 }}>Módulo de redação</h1>
+    <div>
+      <div style={{ padding: "32px 32px 0", maxWidth: 900, margin: "0 auto" }}>
+        <h1 style={{ fontSize: 24, marginBottom: 20 }}>Módulo de redação</h1>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-        {[
-          { key: "historico", label: "Arquivo histórico" },
-          { key: "gerador", label: "Gerador com IA" },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: "9px 16px", borderRadius: 9, cursor: "pointer",
-              border: `1px solid ${tab === t.key ? C.accent : C.border}`,
-              background: tab === t.key ? "rgba(88,166,255,0.12)" : "transparent",
-              color: tab === t.key ? C.accent : C.text, fontWeight: 600, fontSize: 14,
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
+        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          {[
+            { key: "escrever", label: "Escrever" },
+            { key: "historico", label: "Arquivo histórico" },
+            { key: "gerador", label: "Gerador com IA" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                padding: "9px 16px", borderRadius: 9, cursor: "pointer",
+                border: `1px solid ${tab === t.key ? C.accent : C.border}`,
+                background: tab === t.key ? "rgba(88,166,255,0.12)" : "transparent",
+                color: tab === t.key ? C.accent : C.text, fontWeight: 600, fontSize: 14,
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {tab === "escrever" && <RedacaoEditor />}
+
       {tab === "historico" && (
-        <div>
+        <div style={{ padding: "0 32px 32px", maxWidth: 900, margin: "0 auto" }}>
           <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
             {years.map((y) => (
               <button
@@ -1189,7 +1178,7 @@ function Redacao() {
       )}
 
       {tab === "gerador" && (
-        <div>
+        <div style={{ padding: "0 32px 32px", maxWidth: 900, margin: "0 auto" }}>
           <button
             onClick={gerarTemaIA}
             disabled={aiLoading}
