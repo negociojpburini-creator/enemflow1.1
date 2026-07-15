@@ -7,7 +7,7 @@ import {
 import {
   Home, ClipboardList, PenTool, BarChart3, Clock, CheckCircle2, XCircle,
   RotateCcw, Copy, ChevronDown, Sparkles, Check, Flag, AlertTriangle,
-  Lightbulb, RefreshCw, BookOpen,
+  Lightbulb, RefreshCw, BookOpen, CalendarDays,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
@@ -16,6 +16,7 @@ import LoginScreen from "./LoginScreen";
 import LoadingScreen from "./LoadingScreen";
 import Questoes from "./Questoes";
 import RedacaoEditor from "./RedacaoEditor";
+import PlanoEstudos from "./PlanoEstudos";
 
 // ---------------------------------------------------------------------------
 // Seed data — 20 original high-difficulty practice questions
@@ -460,6 +461,7 @@ function TopNav({ screen, setScreen, onRedoOnboarding, locked, userEmail, onLogo
     { key: "questoes", label: "Questões", icon: BookOpen },
     { key: "simulado", label: "Simulado", icon: ClipboardList },
     { key: "redacao", label: "Redação", icon: PenTool },
+    { key: "plano", label: "Plano", icon: CalendarDays },
   ];
   return (
     <div style={{
@@ -1332,6 +1334,7 @@ export default function EnemFlowApp() {
         />
       )}
       {screen === "redacao" && <Redacao />}
+      {screen === "plano" && <PlanoEstudos />}
     </div>
   );
 }
